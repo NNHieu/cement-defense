@@ -1,11 +1,11 @@
 from PIL import Image
 
-class TriggerHandler(object):
-    def __init__(self, trigger_path, trigger_size, trigger_label, img_width, img_height):
+class BadNetTriggerHandler(object):
+    def __init__(self, trigger_label, trigger_path, trigger_size, img_width, img_height):
+        self.trigger_label = trigger_label
         self.trigger_img = Image.open(trigger_path).convert('RGB')
         self.trigger_size = trigger_size
         self.trigger_img = self.trigger_img.resize((trigger_size, trigger_size))        
-        self.trigger_label = trigger_label
         self.img_width = img_width
         self.img_height = img_height
 
