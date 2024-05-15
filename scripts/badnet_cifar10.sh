@@ -21,7 +21,7 @@ for prate in ${poisoning_rate[@]}; do
 for portion in ${trainset_portion[@]}; do
 if [[ $(echo "$portion > $prate" |bc -l) ]]
 then
-    command="python sig_attack.py --trainset_portion $portion --epochs $epochs --poisoning_rate $prate --model_name $model_name --lr $lr --optimizer_name $optimizer_name"
+    command="python badnet_attack.py --trainset_portion $portion --epochs $epochs --poisoning_rate $prate --model_name $model_name --lr $lr --optimizer_name $optimizer_name"
     # command="echo $portion $prate"
     echo -e "$command\n"
     jobs+=("$command")

@@ -16,8 +16,10 @@ def get_optimizer(args, model):
 def train_one_epoch(data_loader, model, criterion, optimizer, device):
     running_loss = 0
     model.train()
-    y_true = []
-    y_predict = []
+    # y_true = []
+    # y_predict = []
+    num_correct = 0
+    num_sample = 0
     for step, (batch_x, batch_y) in enumerate(tqdm(data_loader, disable=True)):
         batch_x = batch_x.to(device)
         batch_y = batch_y.to(device)
@@ -27,14 +29,17 @@ def train_one_epoch(data_loader, model, criterion, optimizer, device):
         loss = criterion(output, batch_y)
         loss.backward()
         optimizer.step()
+
         batch_y_predict = torch.argmax(output.detach(), dim=1)
-        y_true.append(batch_y)
-        y_predict.append(batch_y_predict)
+        num_correct += (batch_y_predict == batch_y).sum().item()
+        num_sample += batch_y.shape[0]
+        # y_true.append(batch_y)
+        # y_predict.append(batch_y_predict)
         running_loss += loss
-    y_true = torch.cat(y_true,0)
-    y_predict = torch.cat(y_predict,0)
+    # y_true = torch.cat(y_true,0)
+    # y_predict = torch.cat(y_predict,0)
     return {
-            "acc": accuracy_score(y_true.cpu(), y_predict.cpu()),
+            "acc": num_correct / num_sample,
             "loss": running_loss.item() / len(data_loader),
             }
 
@@ -46,6 +51,7 @@ def evaluate_attack(data_loader_val_clean, data_loader_val_poisoned, model, devi
             'asr': asr['acc'], 'asr_loss': asr['loss'],
             }
 
+@torch.no_grad()
 def eval(data_loader, model, device, print_perform=False, target_names=None):
     criterion = torch.nn.CrossEntropyLoss()
     model.eval() # switch to eval status
