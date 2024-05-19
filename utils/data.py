@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 
 def add_idx(e, i):
     e["id"] = i
+    e["is_poison"] = False
     return e
 
 def build_transform(dataset, has_augmentation=True):
@@ -41,12 +42,12 @@ def build_transform(dataset, has_augmentation=True):
     
     def apply_transform(examples):
         # images = [e['img'] for e in examples['img']]
-        examples['tensor'] = [test_transform(img) for img in examples['img']]
+        examples['inputs'] = [test_transform(img) for img in examples['img']]
         return examples
     
     def apply_train_transform(examples):
         # images = [e['img'] for e in examples['img']]
-        examples['tensor'] = [train_transform(img) for img in examples['img']]
+        examples['inputs'] = [train_transform(img) for img in examples['img']]
         return examples
     return apply_train_transform, apply_transform, detransform
 
@@ -54,10 +55,30 @@ def hist_classes(target_names, all_labels):
     label_hist = np.histogram(all_labels, bins=range(len(target_names) + 1))
     print(list(zip(target_names, label_hist[0].tolist())))
 
+def poison(data, trigger_handler, poison_cond=None):
+    def put_trigger(e):
+        e['img'] = trigger_handler.put_trigger(e['img'])
+        e['label'] = trigger_handler.trigger_label
+        e["is_poison"] = True
+        return e
+    if poison_cond is None:
+        return data.map(put_trigger)
+    else:
+        def might_put_trigger(e, i):
+            if poison_cond(e, i):
+                return put_trigger(e)
+            return e
+        return data.map(might_put_trigger, with_indices=True)
+
+def filter_by_id(data, trainset_kept_indices):
+    assert "id" in data.column_names, "Please add id to the dataset first"
+    return data.filter(lambda e: e["id"] in trainset_kept_indices)
+
 class DataModule():
     def __init__(self, args) -> None:
         self.hparams = Namespace(
             dataset=args.dataset,
+            shuffle_seed=args.shuffle_seed,
             poisoning_rate=args.poisoning_rate,
             trainset_portion=args.trainset_portion,
             batch_size=args.batch_size,
@@ -68,18 +89,38 @@ class DataModule():
         self.hparams.target_names = self.base_ds['test'].features['label'].names
         self.hparams.image_shape = np.array(self.base_ds['train'][0]['img']).shape
         self.base_ds['train'] = self.base_ds['train'].map(add_idx, with_indices=True)
+        self.base_ds['train'] = self.base_ds['train'].shuffle(seed=self.hparams.shuffle_seed)
 
-    def subsample_trainset(self, trainset_kept_indices):
-        self.base_ds['train'] = self.base_ds['train'].filter(lambda e: e["id"] in trainset_kept_indices)
-        self.hparams.trainset_kept_indices = trainset_kept_indices
+    def subsample_trainset(self):
+        # Just take a subset of the base train set for training
+        kept_size = int(self.hparams.trainset_orig_size * self.hparams.trainset_portion)
+        self.base_ds['train'] = self.base_ds['train'].select(range(kept_size))
+        # Let take a look at the histogram of each class in the selected subset.
+        print("Trainset size:", len(self.base_ds['train']))
+        hist_classes(self.hparams.target_names, self.base_ds['train']['label'])
 
-    def sample_new_data(self, ood_shuffle_ids, kept_percent):
-        oodset_orig_size = len(self.ood_ds['train'])
-        ood_size = int(oodset_orig_size * kept_percent)
-        kept_ids = ood_shuffle_ids[:ood_size]
-        self.ood_ds['train'] = self.ood_ds['train'].filter(lambda e: e["id"] in kept_ids)
-        self.hparams.ood_kept_ids = kept_ids
+    def setup_poisoned_sets(self, triggle_handler):
+        # This part poisons the training data.
+        poison_size = int(self.hparams.trainset_orig_size * self.hparams.poisoning_rate)
+        print("Poison_size", poison_size)
+        self.base_ds['train_poisoned'] = poison(self.base_ds['train'], triggle_handler, poison_cond=lambda e, i: i < poison_size)
+        self.base_ds['test_poisoned'] = poison(self.base_ds['test'], triggle_handler)
+        print("Poisoned Trainset")
+        hist_classes(self.hparams.target_names, self.base_ds['train_poisoned']['label'])
+    
+    def setup_ood(self, ood_dataset_name, shuffle_seed, kept_percent=1.0):
+        self.ood_ds = datasets.load_dataset(ood_dataset_name)
+        self.ood_ds['train'] = self.ood_ds['train'].map(add_idx, with_indices=True)
+        self.hparams.oodset_orig_size = len(self.ood_ds['train'])
+        self.ood_ds['train'] = self.ood_ds['train'].shuffle(seed=shuffle_seed)
+        
+        self.hparams.ood_shuffle_seed = shuffle_seed
+        if kept_percent < 1.0:
+            ood_size = int(self.hparams.oodset_orig_size  * kept_percent)
+            self.ood_ds['train'] = self.ood_ds['train'].select(range(ood_size))
+        print("OOD set size:", len(self.ood_ds['train']))
 
+    def concat_ood(self):
         columns_to_keep = ['img', 'label']
         self.base_ds['train_poisoned'] = self.base_ds['train_poisoned'].remove_columns([col for col in self.base_ds['train_poisoned'].column_names if col not in columns_to_keep])
         self.ood_ds['train'] = self.ood_ds['train'].remove_columns([col for col in self.ood_ds['train'].column_names if col not in columns_to_keep])
@@ -90,42 +131,6 @@ class DataModule():
         ])
         print("Concated OOD set to Trainset")
         hist_classes(self.hparams.target_names, self.base_ds['train_poisoned']['label'])
-
-    def setup_trigger(self, 
-              train_shuffle_ids, 
-              triggle_handler):
-        self.hparams.train_shuffle_ids = train_shuffle_ids
-        # Just take a subset of the base train set for training
-        kept_size = int(self.hparams.trainset_orig_size * self.hparams.trainset_portion)
-        trainset_kept_indices = self.hparams.train_shuffle_ids[:kept_size]
-        self.subsample_trainset(trainset_kept_indices)
-        # Let take a look at the histogram of each class in the selected subset.
-        print("Trainset size:", len(self.base_ds['train']))
-        hist_classes(self.hparams.target_names, self.base_ds['train']['label'])
-
-        # This part poisons the training data.
-        poison_size = int(self.hparams.trainset_orig_size * self.hparams.poisoning_rate)
-        self.hparams.train_poison_indices = self.hparams.train_shuffle_ids[:poison_size] # Ids of poison data
-        print("Poison_size", poison_size)
-        def put_trigger(e):
-            e['img'] = triggle_handler.put_trigger(e['img'])
-            e['label'] = triggle_handler.trigger_label
-            return e
-
-        def might_put_trigger(e, poison_idxs):
-            if e['id'] in poison_idxs:
-                return put_trigger(e)
-            return e
-        self.base_ds['train_poisoned'] = self.base_ds['train'].map(might_put_trigger, 
-                                                        fn_kwargs={"poison_idxs": self.hparams.train_poison_indices})
-        self.base_ds['test_poisoned'] = self.base_ds['test'].map(put_trigger)
-        print("Poisoned Trainset")
-        hist_classes(self.hparams.target_names, self.base_ds['train_poisoned']['label'])
-    
-    def setup_ood(self, ood_dataset_name):
-        self.ood_ds = datasets.load_dataset(ood_dataset_name)
-        self.ood_ds['train'] = self.ood_ds['train'].map(add_idx, with_indices=True)
-        self.hparams.oodset_orig_size = len(self.ood_ds['train'])
     
     def apply_transform(self):
         # Apply basic augmentation and normalization on data
@@ -133,14 +138,17 @@ class DataModule():
         self.base_ds['train_poisoned'].set_transform(apply_train_transform)
         self.base_ds['test_poisoned'].set_transform(apply_transform)
         self.base_ds['test'].set_transform(apply_transform)
-        # print(cifar10['train_poisoned'][0]['tensor'].shape) # For checking
+        # print(cifar10['train_poisoned'][0]['inputs'].shape) # For checking
 
     def get_dataloaders(self):
         # Create dataloaders
         def collate_fn(examples):
-            tensor = torch.stack([example["tensor"] for example in examples])
+            inputs = torch.stack([example["inputs"] for example in examples])
             labels = torch.tensor([example["label"] for example in examples])
-            return tensor, labels
+            return {
+                "inputs": inputs,
+                "label": labels,
+            }
         train_poisoned_dataloader = DataLoader(self.base_ds['train_poisoned'], collate_fn=collate_fn, batch_size=self.hparams.batch_size, shuffle=True, num_workers=2)
         test_poisoned_dataloader = DataLoader(self.base_ds['test_poisoned'], collate_fn=collate_fn, batch_size=self.hparams.batch_size, shuffle=False, num_workers=2)
         test_clean_dataloader = DataLoader(self.base_ds['test'], collate_fn=collate_fn, batch_size=self.hparams.batch_size, shuffle=False, num_workers=2)

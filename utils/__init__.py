@@ -12,6 +12,7 @@ def add_comm_arguments(parser):
     parser.add_argument('--seed', type=int, default=43)
     parser.add_argument('--model_name', type=str, default='badnet')
     parser.add_argument('--dataset', type=str, default="cifar10", help='Path to the dataset')
+    parser.add_argument('--shuffle_seed', type=int, default=43)
     parser.add_argument('--trainset_portion', type=float, default=1.0)
     
     parser.add_argument('--ood_dataset', type=str, default=None, help='Path to the ood dataset')
