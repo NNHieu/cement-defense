@@ -73,6 +73,8 @@ class DataModule():
         self.base_ds['train'] = self.base_ds['train'].filter(lambda e: e["id"] in trainset_kept_indices)
         self.hparams.trainset_kept_indices = trainset_kept_indices
 
+    def subsample_poisoned_trainset
+
     def sample_new_data(self, ood_shuffle_ids, kept_percent):
         oodset_orig_size = len(self.ood_ds['train'])
         ood_size = int(oodset_orig_size * kept_percent)

@@ -27,3 +27,4 @@ def add_comm_arguments(parser):
     parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
     parser.add_argument('--device', type=str, default="cuda", help='Device to run the training on')
     parser.add_argument('--optimizer_name', type=str, default='sgd')
+    parser.add_argument('--no_aug', action='store_true', help='No data augmentation')

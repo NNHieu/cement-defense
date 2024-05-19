@@ -1,5 +1,5 @@
 #!/bin/bash
-CUDA_DEVICES=(0 1 2 4 5)
+CUDA_DEVICES=(0 1 2 3 4 5)
 
 # Define parameter values
 trainset_portion=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0)
@@ -11,7 +11,7 @@ model_name="resnet18"
 epochs=150
 lr=0.1
 optimizer_name=sgd
-seed=90
+seed=43
 
 # Create an array to store job commands
 jobs=()
@@ -22,7 +22,7 @@ for prate in ${poisoning_rate[@]}; do
 for portion in ${trainset_portion[@]}; do
 if [[ $(echo "$portion > $prate" |bc -l) ]]
 then
-    command="python badnet_attack.py --trainset_portion $portion --epochs $epochs --poisoning_rate $prate --model_name $model_name --lr $lr --optimizer_name $optimizer_name --seed $seed"
+    command="python badnet_attack.py --trainset_portion $portion --epochs $epochs --poisoning_rate $prate --model_name $model_name --lr $lr --optimizer_name $optimizer_name --no_aug --seed $seed"
     # command="echo $portion $prate"
     echo -e "$command\n"
     jobs+=("$command")

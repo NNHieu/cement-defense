@@ -1,17 +1,19 @@
 #!/bin/bash
-CUDA_DEVICES=(0 1 2 4 5)
+CUDA_DEVICES=(0 1 2 3 4)
 
 # Define parameter values
-trainset_portion=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0)
+# trainset_portion=(1.0)
+trainset_portion=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9)
 # trainset_portion=(0.1 0.5 1.0)
 # poisoning_rate=(0.001 0.002 0.005 0.01)
-# poisoning_rate=(0.002 0.005 0.01)
-poisoning_rate=(0.005 0.01)
+# poisoning_rate=(0.001 0.002 0.005)
+poisoning_rate=(0.02)
+# poisoning_rate=(0.001 0.002 0.005 0.01)
 model_name="resnet18"
-epochs=150
+epochs=200
 lr=0.1
 optimizer_name=sgd
-seed=90
+seed=43
 
 # Create an array to store job commands
 jobs=()
@@ -22,7 +24,7 @@ for prate in ${poisoning_rate[@]}; do
 for portion in ${trainset_portion[@]}; do
 if [[ $(echo "$portion > $prate" |bc -l) ]]
 then
-    command="python badnet_attack.py --trainset_portion $portion --epochs $epochs --poisoning_rate $prate --model_name $model_name --lr $lr --optimizer_name $optimizer_name --seed $seed"
+    command="python wanet_attack.py --trainset_portion $portion --epochs $epochs --poisoning_rate $prate --model_name $model_name --lr $lr --optimizer_name $optimizer_name --seed $seed"
     # command="echo $portion $prate"
     echo -e "$command\n"
     jobs+=("$command")
@@ -30,19 +32,12 @@ fi
 done
 done
 
-# jobs=(
-#     "CUDA_VISIBLE_DEVICES=3 python badnet_v2.py --trainset_portion 0.01 --epochs 1 --poisoning_rate 0.001"
-#     "CUDA_VISIBLE_DEVICES=4 python badnet_v2.py --trainset_portion 0.01 --epochs 1 --poisoning_rate 0.001"
-#     "CUDA_VISIBLE_DEVICES=5 python badnet_v2.py --trainset_portion 0.01 --epochs 1 --poisoning_rate 0.001"
-#     "CUDA_VISIBLE_DEVICES=4 python badnet_v2.py --trainset_portion 0.01 --epochs 1 --poisoning_rate 0.001"
-# )
-
 # Maximum number of parallel jobs
-max_parallel_jobs=10
+max_parallel_jobs=6
 
 # Function to get the number of running tmux jobs
 get_running_jobs_count() {
-    tmux list-sessions 2>/dev/null | grep -c "^job_"
+    tmux list-sessions 2>/dev/null | grep -c "^jobwanet_"
 }
 
 # Function to start a job in tmux
@@ -63,7 +58,7 @@ for i in "${!jobs[@]}"; do
     while [ "$(get_running_jobs_count)" -ge "$max_parallel_jobs" ]; do
         sleep 1
     done
-    job_name="job_$((i + 1))"
+    job_name="jobwanet_$((i + 1))"
     start_job "${jobs[$i]}" "$job_name" "$i"
 done
 

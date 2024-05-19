@@ -7,7 +7,7 @@ import datasets
 datasets.disable_caching()
 import torch
 
-from attack_utils.badnet import BadNetTriggerHandler
+from attack_utils.wanet import WanetTriggerHandler
 from model_zoo import get_model
 from utils.data import DataModule
 from utils.train import get_optimizer, AttackingTrainer
@@ -17,9 +17,14 @@ def create_parser():
     parser = argparse.ArgumentParser(description="Argument parser for the script")
     add_comm_arguments(parser)
     # Poisoning paramerters
-    parser.add_argument('--trigger_path', type=str, default="triggers/trigger_10.png", help='Path to the trigger image')
-    parser.add_argument('--trigger_size', type=int, default=3, help='Size of the trigger')
-
+    parser.add_argument("--trigger_s", type=float, default=0.5)
+    parser.add_argument("--trigger_k", type=int, default=4)
+    parser.add_argument(
+        "--trigger_grid_rescale", type=float, default=1
+    )  # scale grid values to avoid pixel values going out of [-1, 1]. For example, grid-rescale = 0.98
+    parser.add_argument(
+        "--trigger_add_noise", action="store_true",
+    )
     return parser
 
 args = create_parser().parse_args()
@@ -27,12 +32,12 @@ dm = DataModule(args)
 set_seed(args.seed)
 # We shuffle the training set
 train_shuffle_ids = np.random.permutation(dm.hparams.trainset_orig_size).tolist()
-triggle_handler = BadNetTriggerHandler(
+triggle_handler = WanetTriggerHandler(
     args.trigger_label,
-    args.trigger_path,
-    args.trigger_size,
-    dm.hparams.image_shape[0],
-    dm.hparams.image_shape[1])
+    dm.hparams.image_shape, 
+    args.trigger_k,
+    s=args.trigger_s, grid_rescale=args.trigger_grid_rescale,
+    noise=args.trigger_add_noise) # There is randomization in this class
 dm.setup_trigger(train_shuffle_ids, triggle_handler)
 
 if args.ood_dataset is not None:
@@ -53,10 +58,10 @@ criterion = torch.nn.CrossEntropyLoss()
 
 trainer = AttackingTrainer()
 if args.ood_dataset is None:
-    out_dir = Path(f"outputs/BADNET/{args.model_name}_{args.optimizer_name}/")
+    out_dir = Path(f"outputs/WANET/{args.model_name}_{args.optimizer_name}/")
 else:
     ood_alias = args.ood_dataset.split("/")[-1]
-    out_dir = Path(f"outputs/BADNET-ood/{ood_alias}_{args.ood_percent}/{args.model_name}_{args.optimizer_name}/")
+    out_dir = Path(f"outputs/WANET-ood/{ood_alias}_{args.ood_percent}/{args.model_name}_{args.optimizer_name}/")
 out_dir.mkdir(parents=True, exist_ok=True)
 trainer.train(
     args,

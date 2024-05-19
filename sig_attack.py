@@ -17,7 +17,7 @@ def create_parser():
     parser = argparse.ArgumentParser(description="Argument parser for the script")
     add_comm_arguments(parser)
     # Poisoning paramerters
-    parser.add_argument('--trigger_delta', type=float, default=40, help='Size of the trigger')
+    parser.add_argument('--trigger_delta', type=float, default=20, help='Size of the trigger')
     parser.add_argument('--trigger_f', type=float, default=6, help='Size of the trigger')
 
     return parser
@@ -55,7 +55,7 @@ if args.ood_dataset is None:
     out_dir = Path(f"outputs/SIG/{args.model_name}_{args.optimizer_name}/")
 else:
     ood_alias = args.ood_dataset.split("/")[-1]
-    out_dir = Path(f"outputs/SIG-ood/{ood_alias}/{args.model_name}_{args.optimizer_name}/")
+    out_dir = Path(f"outputs/SIG-ood/{ood_alias}_{args.ood_percent}/{args.model_name}_{args.optimizer_name}/")
 out_dir.mkdir(parents=True, exist_ok=True)
 trainer.train(
     args,

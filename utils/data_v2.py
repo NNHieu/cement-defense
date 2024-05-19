@@ -54,6 +54,21 @@ def hist_classes(target_names, all_labels):
     label_hist = np.histogram(all_labels, bins=range(len(target_names) + 1))
     print(list(zip(target_names, label_hist[0].tolist())))
 
+def poison(trigger_handler, dataset, poisoned_inds=None):
+        def put_trigger(e):
+            e['img'] = trigger_handler.put_trigger(e['img'])
+            e['label'] = trigger_handler.trigger_label
+            return e
+        
+        if poisoned_inds is None:
+            return dataset.map(put_trigger)
+        else:
+            def might_put_trigger(e):
+                if  e['id'] in poisoned_inds:
+                    return put_trigger(e)
+                return e
+            dataset.map(might_put_trigger)
+
 class DataModule():
     def __init__(self, args) -> None:
         self.hparams = Namespace(
@@ -90,10 +105,23 @@ class DataModule():
         ])
         print("Concated OOD set to Trainset")
         hist_classes(self.hparams.target_names, self.base_ds['train_poisoned']['label'])
+    
+    def poison(self, trigger_handler, dataset, poisoned_inds=None):
+        def put_trigger(e):
+            e['img'] = trigger_handler.put_trigger(e['img'])
+            e['label'] = trigger_handler.trigger_label
+            return e
+        
+        def might_put_trigger(e):
+            if e['id'] in poisoned_inds:
+                return put_trigger(e)
+            return e
+        dataset.map(might_put_trigger)
+
 
     def setup_trigger(self, 
               train_shuffle_ids, 
-              triggle_handler):
+              trigger_handler):
         self.hparams.train_shuffle_ids = train_shuffle_ids
         # Just take a subset of the base train set for training
         kept_size = int(self.hparams.trainset_orig_size * self.hparams.trainset_portion)
@@ -107,18 +135,9 @@ class DataModule():
         poison_size = int(self.hparams.trainset_orig_size * self.hparams.poisoning_rate)
         self.hparams.train_poison_indices = self.hparams.train_shuffle_ids[:poison_size] # Ids of poison data
         print("Poison_size", poison_size)
-        def put_trigger(e):
-            e['img'] = triggle_handler.put_trigger(e['img'])
-            e['label'] = triggle_handler.trigger_label
-            return e
-
-        def might_put_trigger(e, poison_idxs):
-            if e['id'] in poison_idxs:
-                return put_trigger(e)
-            return e
-        self.base_ds['train_poisoned'] = self.base_ds['train'].map(might_put_trigger, 
-                                                        fn_kwargs={"poison_idxs": self.hparams.train_poison_indices})
-        self.base_ds['test_poisoned'] = self.base_ds['test'].map(put_trigger)
+        
+        self.base_ds['train_poisoned'] = poison(trigger_handler, self.base_ds['train'], self.hparams.train_poison_indices)
+        self.base_ds['test_poisoned'] = poison(trigger_handler, self.base_ds['test'])
         print("Poisoned Trainset")
         hist_classes(self.hparams.target_names, self.base_ds['train_poisoned']['label'])
     

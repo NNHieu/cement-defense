@@ -20,7 +20,7 @@ def train_one_epoch(data_loader, model, criterion, optimizer, device):
     # y_predict = []
     num_correct = 0
     num_sample = 0
-    for step, (batch_x, batch_y) in enumerate(tqdm(data_loader, disable=True)):
+    for step, (batch_x, batch_y) in enumerate(tqdm(data_loader, disable=False, leave=False, desc="Training")):
         batch_x = batch_x.to(device)
         batch_y = batch_y.to(device)
 
@@ -58,7 +58,7 @@ def eval(data_loader, model, device, print_perform=False, target_names=None):
     y_true = []
     y_predict = []
     loss_sum = []
-    for (batch_x, batch_y) in tqdm(data_loader, disable=True):
+    for (batch_x, batch_y) in tqdm(data_loader, disable=False, leave=False, desc="Evaluation"):
         batch_x = batch_x.to(device)
         batch_y = batch_y.to(device)
 
@@ -92,7 +92,7 @@ class AttackingTrainer():
               args, 
               train_poisoned_dataloader, test_poisoned_dataloader, test_clean_dataloader, 
               model, criterion, optimizer, scheduler,
-              out_dir=None,
+              out_dir: Path = None,
               save=True):
         # Start training
         # out_dir = Path(f"outputs/{args.model_name}_{args.optimizer_name}/")
@@ -100,6 +100,9 @@ class AttackingTrainer():
         # start_time = time.time()
         print(f"Start training for {args.epochs} epochs")
         stats = []
+        if out_dir is not None and args.no_aug:
+            out_dir /= "no_aug"
+            out_dir.mkdir(parents=True, exist_ok=True)
         for epoch in range(args.epochs):
             train_stats = train_one_epoch(train_poisoned_dataloader, model, criterion, optimizer, args.device)
             test_stats = evaluate_attack(test_clean_dataloader, test_poisoned_dataloader, model, args.device)
@@ -120,7 +123,7 @@ class AttackingTrainer():
                     {"args": vars(args),
                     "stats": stats,
                     "model": model.state_dict()},
-                    out_dir/f"{args.model_name}_{args.optimizer_name}_{args.epochs}_{args.poisoning_rate}_{args.trainset_portion}.pt"
+                    out_dir/f"{args.model_name}_{args.optimizer_name}_{args.epochs}_{args.poisoning_rate}_{args.trainset_portion}_{args.seed}.pt"
                 )
             # save model 
             # torch.save(model.state_dict(), basic_model_path)
